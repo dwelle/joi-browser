@@ -84,16 +84,16 @@ return /******/ (function(modules) { // webpackBootstrap
 	var Any = __webpack_require__(11);
 	var Cast = __webpack_require__(16);
 	var Errors = __webpack_require__(13);
-	var Lazy = __webpack_require__(32);
+	var Lazy = __webpack_require__(30);
 	var Ref = __webpack_require__(12);
 
 	// Declare internals
 
 	var internals = {
 	    alternatives: __webpack_require__(26),
-	    array: __webpack_require__(33),
+	    array: __webpack_require__(31),
 	    boolean: __webpack_require__(25),
-	    binary: __webpack_require__(34),
+	    binary: __webpack_require__(32),
 	    date: __webpack_require__(17),
 	    number: __webpack_require__(24),
 	    object: __webpack_require__(27),
@@ -467,7 +467,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
 	    root.extensionsSchema = internals.array.items([internals.object, internals.object._func().arity(1)]).strict();
 
-	    root.version = __webpack_require__(35).version;
+	    root.version = __webpack_require__(33).version;
 
 	    return root;
 	};
@@ -2705,7 +2705,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
 	    _class.prototype.checkOptions = function checkOptions(options) {
 
-	        var Schemas = __webpack_require__(31);
+	        var Schemas = __webpack_require__(29);
 	        var result = Schemas.options.validate(options);
 	        if (result.error) {
 	            throw new Error(result.error.details[0].message);
@@ -5414,6 +5414,11 @@ return /******/ (function(modules) { // webpackBootstrap
 	        cfwsComment: 17,
 	        cfwsFWS: 18,
 
+	        // Address contains non-ASCII when the allowUnicode option is false
+	        // Has to be > internals.defaultThreshold so that it's rejected
+	        // without an explicit errorLevel:
+	        undesiredNonAscii: 25,
+
 	        // Address contains deprecated elements, but may still be valid in some contexts
 
 	        deprecatedLocalPart: 33,
@@ -5587,6 +5592,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	 *     addresses.
 	 *   {*} tldBlacklist The set of domains to consider invalid.
 	 *   {*} tldWhitelist The set of domains to consider valid.
+	 *   {*} allowUnicode Whether to allow non-ASCII characters, defaults to true.
 	 *   {*} minDomainAtoms The minimum number of domain atoms which must be present
 	 *     for the address to be valid.
 	 * @param {function(number|boolean)} callback The (optional) callback handler.
@@ -5645,6 +5651,11 @@ return /******/ (function(modules) { // webpackBootstrap
 	            maxResult = value;
 	        }
 	    };
+
+	    var allowUnicode = options.allowUnicode === undefined || !!options.allowUnicode;
+	    if (!allowUnicode && /[^\x00-\x7f]/.test(email)) {
+	        updateResult(internals.diagnoses.undesiredNonAscii);
+	    }
 
 	    var context = {
 	        now: internals.components.localpart,
@@ -8489,7 +8500,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
 	// Load modules
 
-	var Hoek = __webpack_require__(29);
+	var Hoek = __webpack_require__(2);
 
 	// Declare internals
 
@@ -8714,1069 +8725,6 @@ return /******/ (function(modules) { // webpackBootstrap
 /* 29 */
 /***/ (function(module, exports, __webpack_require__) {
 
-	/* WEBPACK VAR INJECTION */(function(Buffer, process) {'use strict';
-
-	// Load modules
-
-	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
-
-	var Crypto = __webpack_require__(5);
-	var Path = __webpack_require__(6);
-	var Util = __webpack_require__(7);
-	var Escape = __webpack_require__(30);
-
-	// Declare internals
-
-	var internals = {};
-
-	// Clone object or array
-
-	exports.clone = function (obj, seen) {
-
-	    if ((typeof obj === 'undefined' ? 'undefined' : _typeof(obj)) !== 'object' || obj === null) {
-
-	        return obj;
-	    }
-
-	    seen = seen || new Map();
-
-	    var lookup = seen.get(obj);
-	    if (lookup) {
-	        return lookup;
-	    }
-
-	    var newObj = void 0;
-	    var cloneDeep = false;
-
-	    if (!Array.isArray(obj)) {
-	        if (Buffer.isBuffer(obj)) {
-	            newObj = new Buffer(obj);
-	        } else if (obj instanceof Date) {
-	            newObj = new Date(obj.getTime());
-	        } else if (obj instanceof RegExp) {
-	            newObj = new RegExp(obj);
-	        } else {
-	            var proto = Object.getPrototypeOf(obj);
-	            if (proto && proto.isImmutable) {
-
-	                newObj = obj;
-	            } else {
-	                newObj = Object.create(proto);
-	                cloneDeep = true;
-	            }
-	        }
-	    } else {
-	        newObj = [];
-	        cloneDeep = true;
-	    }
-
-	    seen.set(obj, newObj);
-
-	    if (cloneDeep) {
-	        var keys = Object.getOwnPropertyNames(obj);
-	        for (var i = 0; i < keys.length; ++i) {
-	            var key = keys[i];
-	            var descriptor = Object.getOwnPropertyDescriptor(obj, key);
-	            if (descriptor && (descriptor.get || descriptor.set)) {
-
-	                Object.defineProperty(newObj, key, descriptor);
-	            } else {
-	                newObj[key] = exports.clone(obj[key], seen);
-	            }
-	        }
-	    }
-
-	    return newObj;
-	};
-
-	// Merge all the properties of source into target, source wins in conflict, and by default null and undefined from source are applied
-
-	/*eslint-disable */
-	exports.merge = function (target, source, isNullOverride /* = true */, isMergeArrays /* = true */) {
-	    /*eslint-enable */
-
-	    exports.assert(target && (typeof target === 'undefined' ? 'undefined' : _typeof(target)) === 'object', 'Invalid target value: must be an object');
-	    exports.assert(source === null || source === undefined || (typeof source === 'undefined' ? 'undefined' : _typeof(source)) === 'object', 'Invalid source value: must be null, undefined, or an object');
-
-	    if (!source) {
-	        return target;
-	    }
-
-	    if (Array.isArray(source)) {
-	        exports.assert(Array.isArray(target), 'Cannot merge array onto an object');
-	        if (isMergeArrays === false) {
-	            // isMergeArrays defaults to true
-	            target.length = 0; // Must not change target assignment
-	        }
-
-	        for (var i = 0; i < source.length; ++i) {
-	            target.push(exports.clone(source[i]));
-	        }
-
-	        return target;
-	    }
-
-	    var keys = Object.keys(source);
-	    for (var _i = 0; _i < keys.length; ++_i) {
-	        var key = keys[_i];
-	        var value = source[key];
-	        if (value && (typeof value === 'undefined' ? 'undefined' : _typeof(value)) === 'object') {
-
-	            if (!target[key] || _typeof(target[key]) !== 'object' || Array.isArray(target[key]) !== Array.isArray(value) || value instanceof Date || Buffer.isBuffer(value) || value instanceof RegExp) {
-
-	                target[key] = exports.clone(value);
-	            } else {
-	                exports.merge(target[key], value, isNullOverride, isMergeArrays);
-	            }
-	        } else {
-	            if (value !== null && value !== undefined) {
-	                // Explicit to preserve empty strings
-
-	                target[key] = value;
-	            } else if (isNullOverride !== false) {
-	                // Defaults to true
-	                target[key] = value;
-	            }
-	        }
-	    }
-
-	    return target;
-	};
-
-	// Apply options to a copy of the defaults
-
-	exports.applyToDefaults = function (defaults, options, isNullOverride) {
-
-	    exports.assert(defaults && (typeof defaults === 'undefined' ? 'undefined' : _typeof(defaults)) === 'object', 'Invalid defaults value: must be an object');
-	    exports.assert(!options || options === true || (typeof options === 'undefined' ? 'undefined' : _typeof(options)) === 'object', 'Invalid options value: must be true, falsy or an object');
-
-	    if (!options) {
-	        // If no options, return null
-	        return null;
-	    }
-
-	    var copy = exports.clone(defaults);
-
-	    if (options === true) {
-	        // If options is set to true, use defaults
-	        return copy;
-	    }
-
-	    return exports.merge(copy, options, isNullOverride === true, false);
-	};
-
-	// Clone an object except for the listed keys which are shallow copied
-
-	exports.cloneWithShallow = function (source, keys) {
-
-	    if (!source || (typeof source === 'undefined' ? 'undefined' : _typeof(source)) !== 'object') {
-
-	        return source;
-	    }
-
-	    var storage = internals.store(source, keys); // Move shallow copy items to storage
-	    var copy = exports.clone(source); // Deep copy the rest
-	    internals.restore(copy, source, storage); // Shallow copy the stored items and restore
-	    return copy;
-	};
-
-	internals.store = function (source, keys) {
-
-	    var storage = {};
-	    for (var i = 0; i < keys.length; ++i) {
-	        var key = keys[i];
-	        var value = exports.reach(source, key);
-	        if (value !== undefined) {
-	            storage[key] = value;
-	            internals.reachSet(source, key, undefined);
-	        }
-	    }
-
-	    return storage;
-	};
-
-	internals.restore = function (copy, source, storage) {
-
-	    var keys = Object.keys(storage);
-	    for (var i = 0; i < keys.length; ++i) {
-	        var key = keys[i];
-	        internals.reachSet(copy, key, storage[key]);
-	        internals.reachSet(source, key, storage[key]);
-	    }
-	};
-
-	internals.reachSet = function (obj, key, value) {
-
-	    var path = key.split('.');
-	    var ref = obj;
-	    for (var i = 0; i < path.length; ++i) {
-	        var segment = path[i];
-	        if (i + 1 === path.length) {
-	            ref[segment] = value;
-	        }
-
-	        ref = ref[segment];
-	    }
-	};
-
-	// Apply options to defaults except for the listed keys which are shallow copied from option without merging
-
-	exports.applyToDefaultsWithShallow = function (defaults, options, keys) {
-
-	    exports.assert(defaults && (typeof defaults === 'undefined' ? 'undefined' : _typeof(defaults)) === 'object', 'Invalid defaults value: must be an object');
-	    exports.assert(!options || options === true || (typeof options === 'undefined' ? 'undefined' : _typeof(options)) === 'object', 'Invalid options value: must be true, falsy or an object');
-	    exports.assert(keys && Array.isArray(keys), 'Invalid keys');
-
-	    if (!options) {
-	        // If no options, return null
-	        return null;
-	    }
-
-	    var copy = exports.cloneWithShallow(defaults, keys);
-
-	    if (options === true) {
-	        // If options is set to true, use defaults
-	        return copy;
-	    }
-
-	    var storage = internals.store(options, keys); // Move shallow copy items to storage
-	    exports.merge(copy, options, false, false); // Deep copy the rest
-	    internals.restore(copy, options, storage); // Shallow copy the stored items and restore
-	    return copy;
-	};
-
-	// Deep object or array comparison
-
-	exports.deepEqual = function (obj, ref, options, seen) {
-
-	    options = options || { prototype: true };
-
-	    var type = typeof obj === 'undefined' ? 'undefined' : _typeof(obj);
-
-	    if (type !== (typeof ref === 'undefined' ? 'undefined' : _typeof(ref))) {
-	        return false;
-	    }
-
-	    if (type !== 'object' || obj === null || ref === null) {
-
-	        if (obj === ref) {
-	            // Copied from Deep-eql, copyright(c) 2013 Jake Luer, jake@alogicalparadox.com, MIT Licensed, https://github.com/chaijs/deep-eql
-	            return obj !== 0 || 1 / obj === 1 / ref; // -0 / +0
-	        }
-
-	        return obj !== obj && ref !== ref; // NaN
-	    }
-
-	    seen = seen || [];
-	    if (seen.indexOf(obj) !== -1) {
-	        return true; // If previous comparison failed, it would have stopped execution
-	    }
-
-	    seen.push(obj);
-
-	    if (Array.isArray(obj)) {
-	        if (!Array.isArray(ref)) {
-	            return false;
-	        }
-
-	        if (!options.part && obj.length !== ref.length) {
-	            return false;
-	        }
-
-	        for (var i = 0; i < obj.length; ++i) {
-	            if (options.part) {
-	                var found = false;
-	                for (var j = 0; j < ref.length; ++j) {
-	                    if (exports.deepEqual(obj[i], ref[j], options)) {
-	                        found = true;
-	                        break;
-	                    }
-	                }
-
-	                return found;
-	            }
-
-	            if (!exports.deepEqual(obj[i], ref[i], options)) {
-	                return false;
-	            }
-	        }
-
-	        return true;
-	    }
-
-	    if (Buffer.isBuffer(obj)) {
-	        if (!Buffer.isBuffer(ref)) {
-	            return false;
-	        }
-
-	        if (obj.length !== ref.length) {
-	            return false;
-	        }
-
-	        for (var _i2 = 0; _i2 < obj.length; ++_i2) {
-	            if (obj[_i2] !== ref[_i2]) {
-	                return false;
-	            }
-	        }
-
-	        return true;
-	    }
-
-	    if (obj instanceof Date) {
-	        return ref instanceof Date && obj.getTime() === ref.getTime();
-	    }
-
-	    if (obj instanceof RegExp) {
-	        return ref instanceof RegExp && obj.toString() === ref.toString();
-	    }
-
-	    if (options.prototype) {
-	        if (Object.getPrototypeOf(obj) !== Object.getPrototypeOf(ref)) {
-	            return false;
-	        }
-	    }
-
-	    var keys = Object.getOwnPropertyNames(obj);
-
-	    if (!options.part && keys.length !== Object.getOwnPropertyNames(ref).length) {
-	        return false;
-	    }
-
-	    for (var _i3 = 0; _i3 < keys.length; ++_i3) {
-	        var key = keys[_i3];
-	        var descriptor = Object.getOwnPropertyDescriptor(obj, key);
-	        if (descriptor.get) {
-	            if (!exports.deepEqual(descriptor, Object.getOwnPropertyDescriptor(ref, key), options, seen)) {
-	                return false;
-	            }
-	        } else if (!exports.deepEqual(obj[key], ref[key], options, seen)) {
-	            return false;
-	        }
-	    }
-
-	    return true;
-	};
-
-	// Remove duplicate items from array
-
-	exports.unique = function (array, key) {
-
-	    var result = void 0;
-	    if (key) {
-	        result = [];
-	        var index = new Set();
-	        array.forEach(function (item) {
-
-	            var identifier = item[key];
-	            if (!index.has(identifier)) {
-	                index.add(identifier);
-	                result.push(item);
-	            }
-	        });
-	    } else {
-	        result = Array.from(new Set(array));
-	    }
-
-	    return result;
-	};
-
-	// Convert array into object
-
-	exports.mapToObject = function (array, key) {
-
-	    if (!array) {
-	        return null;
-	    }
-
-	    var obj = {};
-	    for (var i = 0; i < array.length; ++i) {
-	        if (key) {
-	            if (array[i][key]) {
-	                obj[array[i][key]] = true;
-	            }
-	        } else {
-	            obj[array[i]] = true;
-	        }
-	    }
-
-	    return obj;
-	};
-
-	// Find the common unique items in two arrays
-
-	exports.intersect = function (array1, array2, justFirst) {
-
-	    if (!array1 || !array2) {
-	        return [];
-	    }
-
-	    var common = [];
-	    var hash = Array.isArray(array1) ? exports.mapToObject(array1) : array1;
-	    var found = {};
-	    for (var i = 0; i < array2.length; ++i) {
-	        if (hash[array2[i]] && !found[array2[i]]) {
-	            if (justFirst) {
-	                return array2[i];
-	            }
-
-	            common.push(array2[i]);
-	            found[array2[i]] = true;
-	        }
-	    }
-
-	    return justFirst ? null : common;
-	};
-
-	// Test if the reference contains the values
-
-	exports.contain = function (ref, values, options) {
-
-	    /*
-	        string -> string(s)
-	        array -> item(s)
-	        object -> key(s)
-	        object -> object (key:value)
-	    */
-
-	    var valuePairs = null;
-	    if ((typeof ref === 'undefined' ? 'undefined' : _typeof(ref)) === 'object' && (typeof values === 'undefined' ? 'undefined' : _typeof(values)) === 'object' && !Array.isArray(ref) && !Array.isArray(values)) {
-
-	        valuePairs = values;
-	        values = Object.keys(values);
-	    } else {
-	        values = [].concat(values);
-	    }
-
-	    options = options || {}; // deep, once, only, part
-
-	    exports.assert(arguments.length >= 2, 'Insufficient arguments');
-	    exports.assert(typeof ref === 'string' || (typeof ref === 'undefined' ? 'undefined' : _typeof(ref)) === 'object', 'Reference must be string or an object');
-	    exports.assert(values.length, 'Values array cannot be empty');
-
-	    var compare = void 0;
-	    var compareFlags = void 0;
-	    if (options.deep) {
-	        compare = exports.deepEqual;
-
-	        var hasOnly = options.hasOwnProperty('only');
-	        var hasPart = options.hasOwnProperty('part');
-
-	        compareFlags = {
-	            prototype: hasOnly ? options.only : hasPart ? !options.part : false,
-	            part: hasOnly ? !options.only : hasPart ? options.part : true
-	        };
-	    } else {
-	        compare = function compare(a, b) {
-	            return a === b;
-	        };
-	    }
-
-	    var misses = false;
-	    var matches = new Array(values.length);
-	    for (var i = 0; i < matches.length; ++i) {
-	        matches[i] = 0;
-	    }
-
-	    if (typeof ref === 'string') {
-	        var pattern = '(';
-	        for (var _i4 = 0; _i4 < values.length; ++_i4) {
-	            var value = values[_i4];
-	            exports.assert(typeof value === 'string', 'Cannot compare string reference to non-string value');
-	            pattern += (_i4 ? '|' : '') + exports.escapeRegex(value);
-	        }
-
-	        var regex = new RegExp(pattern + ')', 'g');
-	        var leftovers = ref.replace(regex, function ($0, $1) {
-
-	            var index = values.indexOf($1);
-	            ++matches[index];
-	            return ''; // Remove from string
-	        });
-
-	        misses = !!leftovers;
-	    } else if (Array.isArray(ref)) {
-	        for (var _i5 = 0; _i5 < ref.length; ++_i5) {
-	            var matched = false;
-	            for (var j = 0; j < values.length && matched === false; ++j) {
-	                matched = compare(values[j], ref[_i5], compareFlags) && j;
-	            }
-
-	            if (matched !== false) {
-	                ++matches[matched];
-	            } else {
-	                misses = true;
-	            }
-	        }
-	    } else {
-	        var keys = Object.getOwnPropertyNames(ref);
-	        for (var _i6 = 0; _i6 < keys.length; ++_i6) {
-	            var key = keys[_i6];
-	            var pos = values.indexOf(key);
-	            if (pos !== -1) {
-	                if (valuePairs && !compare(valuePairs[key], ref[key], compareFlags)) {
-
-	                    return false;
-	                }
-
-	                ++matches[pos];
-	            } else {
-	                misses = true;
-	            }
-	        }
-	    }
-
-	    var result = false;
-	    for (var _i7 = 0; _i7 < matches.length; ++_i7) {
-	        result = result || !!matches[_i7];
-	        if (options.once && matches[_i7] > 1 || !options.part && !matches[_i7]) {
-
-	            return false;
-	        }
-	    }
-
-	    if (options.only && misses) {
-
-	        return false;
-	    }
-
-	    return result;
-	};
-
-	// Flatten array
-
-	exports.flatten = function (array, target) {
-
-	    var result = target || [];
-
-	    for (var i = 0; i < array.length; ++i) {
-	        if (Array.isArray(array[i])) {
-	            exports.flatten(array[i], result);
-	        } else {
-	            result.push(array[i]);
-	        }
-	    }
-
-	    return result;
-	};
-
-	// Convert an object key chain string ('a.b.c') to reference (object[a][b][c])
-
-	exports.reach = function (obj, chain, options) {
-
-	    if (chain === false || chain === null || typeof chain === 'undefined') {
-
-	        return obj;
-	    }
-
-	    options = options || {};
-	    if (typeof options === 'string') {
-	        options = { separator: options };
-	    }
-
-	    var path = chain.split(options.separator || '.');
-	    var ref = obj;
-	    for (var i = 0; i < path.length; ++i) {
-	        var key = path[i];
-	        if (key[0] === '-' && Array.isArray(ref)) {
-	            key = key.slice(1, key.length);
-	            key = ref.length - key;
-	        }
-
-	        if (!ref || !(((typeof ref === 'undefined' ? 'undefined' : _typeof(ref)) === 'object' || typeof ref === 'function') && key in ref) || (typeof ref === 'undefined' ? 'undefined' : _typeof(ref)) !== 'object' && options.functions === false) {
-	            // Only object and function can have properties
-
-	            exports.assert(!options.strict || i + 1 === path.length, 'Missing segment', key, 'in reach path ', chain);
-	            exports.assert((typeof ref === 'undefined' ? 'undefined' : _typeof(ref)) === 'object' || options.functions === true || typeof ref !== 'function', 'Invalid segment', key, 'in reach path ', chain);
-	            ref = options.default;
-	            break;
-	        }
-
-	        ref = ref[key];
-	    }
-
-	    return ref;
-	};
-
-	exports.reachTemplate = function (obj, template, options) {
-
-	    return template.replace(/{([^}]+)}/g, function ($0, chain) {
-
-	        var value = exports.reach(obj, chain, options);
-	        return value === undefined || value === null ? '' : value;
-	    });
-	};
-
-	exports.formatStack = function (stack) {
-
-	    var trace = [];
-	    for (var i = 0; i < stack.length; ++i) {
-	        var item = stack[i];
-	        trace.push([item.getFileName(), item.getLineNumber(), item.getColumnNumber(), item.getFunctionName(), item.isConstructor()]);
-	    }
-
-	    return trace;
-	};
-
-	exports.formatTrace = function (trace) {
-
-	    var display = [];
-
-	    for (var i = 0; i < trace.length; ++i) {
-	        var row = trace[i];
-	        display.push((row[4] ? 'new ' : '') + row[3] + ' (' + row[0] + ':' + row[1] + ':' + row[2] + ')');
-	    }
-
-	    return display;
-	};
-
-	exports.callStack = function (slice) {
-
-	    // http://code.google.com/p/v8/wiki/JavaScriptStackTraceApi
-
-	    var v8 = Error.prepareStackTrace;
-	    Error.prepareStackTrace = function (_, stack) {
-
-	        return stack;
-	    };
-
-	    var capture = {};
-	    Error.captureStackTrace(capture, this); // arguments.callee is not supported in strict mode so we use this and slice the trace of this off the result
-	    var stack = capture.stack;
-
-	    Error.prepareStackTrace = v8;
-
-	    var trace = exports.formatStack(stack);
-
-	    return trace.slice(1 + slice);
-	};
-
-	exports.displayStack = function (slice) {
-
-	    var trace = exports.callStack(slice === undefined ? 1 : slice + 1);
-
-	    return exports.formatTrace(trace);
-	};
-
-	exports.abortThrow = false;
-
-	exports.abort = function (message, hideStack) {
-
-	    if (process.env.NODE_ENV === 'test' || exports.abortThrow === true) {
-	        throw new Error(message || 'Unknown error');
-	    }
-
-	    var stack = '';
-	    if (!hideStack) {
-	        stack = exports.displayStack(1).join('\n\t');
-	    }
-	    console.log('ABORT: ' + message + '\n\t' + stack);
-	    process.exit(1);
-	};
-
-	exports.assert = function (condition /*, msg1, msg2, msg3 */) {
-
-	    if (condition) {
-	        return;
-	    }
-
-	    if (arguments.length === 2 && arguments[1] instanceof Error) {
-	        throw arguments[1];
-	    }
-
-	    var msgs = [];
-	    for (var i = 1; i < arguments.length; ++i) {
-	        if (arguments[i] !== '') {
-	            msgs.push(arguments[i]); // Avoids Array.slice arguments leak, allowing for V8 optimizations
-	        }
-	    }
-
-	    msgs = msgs.map(function (msg) {
-
-	        return typeof msg === 'string' ? msg : msg instanceof Error ? msg.message : exports.stringify(msg);
-	    });
-
-	    throw new Error(msgs.join(' ') || 'Unknown error');
-	};
-
-	exports.Timer = function () {
-
-	    this.ts = 0;
-	    this.reset();
-	};
-
-	exports.Timer.prototype.reset = function () {
-
-	    this.ts = Date.now();
-	};
-
-	exports.Timer.prototype.elapsed = function () {
-
-	    return Date.now() - this.ts;
-	};
-
-	exports.Bench = function () {
-
-	    this.ts = 0;
-	    this.reset();
-	};
-
-	exports.Bench.prototype.reset = function () {
-
-	    this.ts = exports.Bench.now();
-	};
-
-	exports.Bench.prototype.elapsed = function () {
-
-	    return exports.Bench.now() - this.ts;
-	};
-
-	exports.Bench.now = function () {
-
-	    var ts = process.hrtime();
-	    return ts[0] * 1e3 + ts[1] / 1e6;
-	};
-
-	// Escape string for Regex construction
-
-	exports.escapeRegex = function (string) {
-
-	    // Escape ^$.*+-?=!:|\/()[]{},
-	    return string.replace(/[\^\$\.\*\+\-\?\=\!\:\|\\\/\(\)\[\]\{\}\,]/g, '\\$&');
-	};
-
-	// Base64url (RFC 4648) encode
-
-	exports.base64urlEncode = function (value, encoding) {
-
-	    exports.assert(typeof value === 'string' || Buffer.isBuffer(value), 'value must be string or buffer');
-	    var buf = Buffer.isBuffer(value) ? value : new Buffer(value, encoding || 'binary');
-	    return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/\=/g, '');
-	};
-
-	// Base64url (RFC 4648) decode
-
-	exports.base64urlDecode = function (value, encoding) {
-
-	    if (typeof value !== 'string') {
-
-	        return new Error('Value not a string');
-	    }
-
-	    if (!/^[\w\-]*$/.test(value)) {
-
-	        return new Error('Invalid character');
-	    }
-
-	    var buf = new Buffer(value, 'base64');
-	    return encoding === 'buffer' ? buf : buf.toString(encoding || 'binary');
-	};
-
-	// Escape attribute value for use in HTTP header
-
-	exports.escapeHeaderAttribute = function (attribute) {
-
-	    // Allowed value characters: !#$%&'()*+,-./:;<=>?@[]^_`{|}~ and space, a-z, A-Z, 0-9, \, "
-
-	    exports.assert(/^[ \w\!#\$%&'\(\)\*\+,\-\.\/\:;<\=>\?@\[\]\^`\{\|\}~\"\\]*$/.test(attribute), 'Bad attribute value (' + attribute + ')');
-
-	    return attribute.replace(/\\/g, '\\\\').replace(/\"/g, '\\"'); // Escape quotes and slash
-	};
-
-	exports.escapeHtml = function (string) {
-
-	    return Escape.escapeHtml(string);
-	};
-
-	exports.escapeJavaScript = function (string) {
-
-	    return Escape.escapeJavaScript(string);
-	};
-
-	exports.escapeJson = function (string) {
-
-	    return Escape.escapeJson(string);
-	};
-
-	exports.nextTick = function (callback) {
-
-	    return function () {
-
-	        var args = arguments;
-	        process.nextTick(function () {
-
-	            callback.apply(null, args);
-	        });
-	    };
-	};
-
-	exports.once = function (method) {
-
-	    if (method._hoekOnce) {
-	        return method;
-	    }
-
-	    var once = false;
-	    var wrapped = function wrapped() {
-
-	        if (!once) {
-	            once = true;
-	            method.apply(null, arguments);
-	        }
-	    };
-
-	    wrapped._hoekOnce = true;
-
-	    return wrapped;
-	};
-
-	exports.isInteger = Number.isSafeInteger;
-
-	exports.ignore = function () {};
-
-	exports.inherits = Util.inherits;
-
-	exports.format = Util.format;
-
-	exports.transform = function (source, transform, options) {
-
-	    exports.assert(source === null || source === undefined || (typeof source === 'undefined' ? 'undefined' : _typeof(source)) === 'object' || Array.isArray(source), 'Invalid source object: must be null, undefined, an object, or an array');
-	    var separator = (typeof options === 'undefined' ? 'undefined' : _typeof(options)) === 'object' && options !== null ? options.separator || '.' : '.';
-
-	    if (Array.isArray(source)) {
-	        var results = [];
-	        for (var i = 0; i < source.length; ++i) {
-	            results.push(exports.transform(source[i], transform, options));
-	        }
-	        return results;
-	    }
-
-	    var result = {};
-	    var keys = Object.keys(transform);
-
-	    for (var _i8 = 0; _i8 < keys.length; ++_i8) {
-	        var key = keys[_i8];
-	        var path = key.split(separator);
-	        var sourcePath = transform[key];
-
-	        exports.assert(typeof sourcePath === 'string', 'All mappings must be "." delineated strings');
-
-	        var segment = void 0;
-	        var res = result;
-
-	        while (path.length > 1) {
-	            segment = path.shift();
-	            if (!res[segment]) {
-	                res[segment] = {};
-	            }
-	            res = res[segment];
-	        }
-	        segment = path.shift();
-	        res[segment] = exports.reach(source, sourcePath, options);
-	    }
-
-	    return result;
-	};
-
-	exports.uniqueFilename = function (path, extension) {
-
-	    if (extension) {
-	        extension = extension[0] !== '.' ? '.' + extension : extension;
-	    } else {
-	        extension = '';
-	    }
-
-	    path = Path.resolve(path);
-	    var name = [Date.now(), process.pid, Crypto.randomBytes(8).toString('hex')].join('-') + extension;
-	    return Path.join(path, name);
-	};
-
-	exports.stringify = function () {
-
-	    try {
-	        return JSON.stringify.apply(null, arguments);
-	    } catch (err) {
-	        return '[Cannot display object: ' + err.message + ']';
-	    }
-	};
-
-	exports.shallow = function (source) {
-
-	    var target = {};
-	    var keys = Object.keys(source);
-	    for (var i = 0; i < keys.length; ++i) {
-	        var key = keys[i];
-	        target[key] = source[key];
-	    }
-
-	    return target;
-	};
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(3).Buffer, __webpack_require__(4)))
-
-/***/ }),
-/* 30 */
-/***/ (function(module, exports, __webpack_require__) {
-
-	/* WEBPACK VAR INJECTION */(function(Buffer) {'use strict';
-
-	// Declare internals
-
-	var internals = {};
-
-	exports.escapeJavaScript = function (input) {
-
-	    if (!input) {
-	        return '';
-	    }
-
-	    var escaped = '';
-
-	    for (var i = 0; i < input.length; ++i) {
-
-	        var charCode = input.charCodeAt(i);
-
-	        if (internals.isSafe(charCode)) {
-	            escaped += input[i];
-	        } else {
-	            escaped += internals.escapeJavaScriptChar(charCode);
-	        }
-	    }
-
-	    return escaped;
-	};
-
-	exports.escapeHtml = function (input) {
-
-	    if (!input) {
-	        return '';
-	    }
-
-	    var escaped = '';
-
-	    for (var i = 0; i < input.length; ++i) {
-
-	        var charCode = input.charCodeAt(i);
-
-	        if (internals.isSafe(charCode)) {
-	            escaped += input[i];
-	        } else {
-	            escaped += internals.escapeHtmlChar(charCode);
-	        }
-	    }
-
-	    return escaped;
-	};
-
-	exports.escapeJson = function (input) {
-
-	    if (!input) {
-	        return '';
-	    }
-
-	    var lessThan = 0x3C;
-	    var greaterThan = 0x3E;
-	    var andSymbol = 0x26;
-	    var lineSeperator = 0x2028;
-
-	    // replace method
-	    var charCode = void 0;
-	    return input.replace(/[<>&\u2028\u2029]/g, function (match) {
-
-	        charCode = match.charCodeAt(0);
-
-	        if (charCode === lessThan) {
-	            return '\\u003c';
-	        } else if (charCode === greaterThan) {
-	            return '\\u003e';
-	        } else if (charCode === andSymbol) {
-	            return '\\u0026';
-	        } else if (charCode === lineSeperator) {
-	            return '\\u2028';
-	        }
-	        return '\\u2029';
-	    });
-	};
-
-	internals.escapeJavaScriptChar = function (charCode) {
-
-	    if (charCode >= 256) {
-	        return '\\u' + internals.padLeft('' + charCode, 4);
-	    }
-
-	    var hexValue = new Buffer(String.fromCharCode(charCode), 'ascii').toString('hex');
-	    return '\\x' + internals.padLeft(hexValue, 2);
-	};
-
-	internals.escapeHtmlChar = function (charCode) {
-
-	    var namedEscape = internals.namedHtml[charCode];
-	    if (typeof namedEscape !== 'undefined') {
-	        return namedEscape;
-	    }
-
-	    if (charCode >= 256) {
-	        return '&#' + charCode + ';';
-	    }
-
-	    var hexValue = new Buffer(String.fromCharCode(charCode), 'ascii').toString('hex');
-	    return '&#x' + internals.padLeft(hexValue, 2) + ';';
-	};
-
-	internals.padLeft = function (str, len) {
-
-	    while (str.length < len) {
-	        str = '0' + str;
-	    }
-
-	    return str;
-	};
-
-	internals.isSafe = function (charCode) {
-
-	    return typeof internals.safeCharCodes[charCode] !== 'undefined';
-	};
-
-	internals.namedHtml = {
-	    '38': '&amp;',
-	    '60': '&lt;',
-	    '62': '&gt;',
-	    '34': '&quot;',
-	    '160': '&nbsp;',
-	    '162': '&cent;',
-	    '163': '&pound;',
-	    '164': '&curren;',
-	    '169': '&copy;',
-	    '174': '&reg;'
-	};
-
-	internals.safeCharCodes = function () {
-
-	    var safe = {};
-
-	    for (var i = 32; i < 123; ++i) {
-
-	        if (i >= 97 || // a-z
-	        i >= 65 && i <= 90 || // A-Z
-	        i >= 48 && i <= 57 || // 0-9
-	        i === 32 || // space
-	        i === 46 || // .
-	        i === 44 || // ,
-	        i === 45 || // -
-	        i === 58 || // :
-	        i === 95) {
-	            // _
-
-	            safe[i] = null;
-	        }
-	    }
-
-	    return safe;
-	}();
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(3).Buffer))
-
-/***/ }),
-/* 31 */
-/***/ (function(module, exports, __webpack_require__) {
-
 	'use strict';
 
 	// Load modules
@@ -9802,7 +8750,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	}).strict();
 
 /***/ }),
-/* 32 */
+/* 30 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
@@ -9846,7 +8794,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	            return result;
 	        }
 
-	        var schema = lazy();
+	        var schema = lazy(value, state, options);
 
 	        if (!(schema instanceof Any)) {
 	            result.errors = this.createError('lazy.schema', null, state, options);
@@ -9871,7 +8819,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	module.exports = new internals.Lazy();
 
 /***/ }),
-/* 33 */
+/* 31 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
@@ -10512,7 +9460,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	module.exports = new internals.Array();
 
 /***/ }),
-/* 34 */
+/* 32 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(Buffer) {'use strict';
@@ -10625,10 +9573,10 @@ return /******/ (function(modules) { // webpackBootstrap
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(3).Buffer))
 
 /***/ }),
-/* 35 */
+/* 33 */
 /***/ (function(module, exports) {
 
-	module.exports = {"_args":[[{"hosted":{"directUrl":"https://raw.githubusercontent.com/dwelle/joi/master/package.json","gitUrl":"git://github.com/dwelle/joi.git#master","httpsUrl":"git+https://github.com/dwelle/joi.git#master","shortcut":"github:dwelle/joi#master","ssh":"git@github.com:dwelle/joi.git#master","sshUrl":"git+ssh://git@github.com/dwelle/joi.git#master","type":"github"},"name":"joi","raw":"joi@github:dwelle/joi#master","rawSpec":"github:dwelle/joi#master","scope":null,"spec":"github:dwelle/joi#master","type":"hosted"},"C:\\xampp\\htdocs\\repos\\forks\\joi-browser"]],"_from":"dwelle/joi#master","_id":"joi@10.6.0","_inCache":true,"_installable":true,"_location":"/joi","_phantomChildren":{},"_requested":{"hosted":{"directUrl":"https://raw.githubusercontent.com/dwelle/joi/master/package.json","gitUrl":"git://github.com/dwelle/joi.git#master","httpsUrl":"git+https://github.com/dwelle/joi.git#master","shortcut":"github:dwelle/joi#master","ssh":"git@github.com:dwelle/joi.git#master","sshUrl":"git+ssh://git@github.com/dwelle/joi.git#master","type":"github"},"name":"joi","raw":"joi@github:dwelle/joi#master","rawSpec":"github:dwelle/joi#master","scope":null,"spec":"github:dwelle/joi#master","type":"hosted"},"_requiredBy":["#DEV:/"],"_resolved":"git://github.com/dwelle/joi.git#009c87565899775133d0048b8041cbb1bf6f5074","_shasum":"4a42e4c31a3e596175ac22282e33152817b9b736","_shrinkwrap":null,"_spec":"joi@github:dwelle/joi#master","_where":"C:\\xampp\\htdocs\\repos\\forks\\joi-browser","bugs":{"url":"https://github.com/hapijs/joi/issues"},"dependencies":{"hoek":"4.x.x","isemail":"3.x.x","items":"2.x.x","topo":"2.x.x"},"description":"Object schema validation","devDependencies":{"hapitoc":"1.x.x","lab":"14.x.x"},"engines":{"node":">=4.0.0"},"gitHead":"009c87565899775133d0048b8041cbb1bf6f5074","homepage":"https://github.com/hapijs/joi","keywords":["hapi","schema","validation"],"license":"BSD-3-Clause","main":"lib/index.js","name":"joi","optionalDependencies":{},"readme":"![joi Logo](https://raw.github.com/hapijs/joi/master/images/joi.png)\n\nObject schema description language and validator for JavaScript objects.\n\n[![npm version](https://badge.fury.io/js/joi.svg)](http://badge.fury.io/js/joi)\n[![Build Status](https://secure.travis-ci.org/hapijs/joi.svg?branch=master)](http://travis-ci.org/hapijs/joi)\n<!--\n\nRemove those badges until they work properly on semver.\n\n[![Dependencies Status](https://david-dm.org/hapijs/joi.svg)](https://david-dm.org/hapijs/joi)\n[![DevDependencies Status](https://david-dm.org/hapijs/joi/dev-status.svg)](https://david-dm.org/hapijs/joi#info=devDependencies)\n\n-->\n[![NSP Status](https://nodesecurity.io/orgs/hapijs/projects/0394bf83-b5bc-410b-878c-e8cf1b92033e/badge)](https://nodesecurity.io/orgs/hapijs/projects/0394bf83-b5bc-410b-878c-e8cf1b92033e)\n[![Known Vulnerabilities](https://snyk.io/test/github/hapijs/joi/badge.svg)](https://snyk.io/test/github/hapijs/joi)\n\n[![Join the chat at https://gitter.im/hapijs/joi](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hapijs/joi?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)\n\nLead Maintainer: [Nicolas Morel](https://github.com/marsup)\n\n# Introduction\n\nImagine you run facebook and you want visitors to sign up on the website with real names and not something like `l337_p@nda` in the first name field. How would you define the limitations of what can be inputted and validate it against the set rules?\n\nThis is joi, joi allows you to create *blueprints* or *schemas* for JavaScript objects (an object that stores information) to ensure *validation* of key information.\n\n# API\nSee the detailed [API Reference](https://github.com/hapijs/joi/blob/v10.6.0/API.md).\n\n# Example\n\n```javascript\nconst Joi = require('joi');\n\nconst schema = Joi.object().keys({\n    username: Joi.string().alphanum().min(3).max(30).required(),\n    password: Joi.string().regex(/^[a-zA-Z0-9]{3,30}$/),\n    access_token: [Joi.string(), Joi.number()],\n    birthyear: Joi.number().integer().min(1900).max(2013),\n    email: Joi.string().email()\n}).with('username', 'birthyear').without('password', 'access_token');\n\n// Return result.\nconst result = Joi.validate({ username: 'abc', birthyear: 1994 }, schema);\n// result.error === null -> valid\n\n// You can also pass a callback which will be called synchronously with the validation result.\nJoi.validate({ username: 'abc', birthyear: 1994 }, schema, function (err, value) { });  // err === null -> valid\n\n```\n\nThe above schema defines the following constraints:\n* `username`\n    * a required string\n    * must contain only alphanumeric characters\n    * at least 3 characters long but no more than 30\n    * must be accompanied by `birthyear`\n* `password`\n    * an optional string\n    * must satisfy the custom regex\n    * cannot appear together with `access_token`\n* `access_token`\n    * an optional, unconstrained string or number\n* `birthyear`\n    * an integer between 1900 and 2013\n* `email`\n    * a valid email address string\n\n# Usage\n\nUsage is a two steps process. First, a schema is constructed using the provided types and constraints:\n\n```javascript\nconst schema = {\n    a: Joi.string()\n};\n```\n\nNote that **joi** schema objects are immutable which means every additional rule added (e.g. `.min(5)`) will return a\nnew schema object.\n\nThen the value is validated against the schema:\n\n```javascript\nconst {error, value} = Joi.validate({ a: 'a string' }, schema);\n\n// or\n\nJoi.validate({ a: 'a string' }, schema, function (err, value) { });\n```\n\nIf the input is valid, then the error will be `null`, otherwise it will be an Error object.\n\nThe schema can be a plain JavaScript object where every key is assigned a **joi** type, or it can be a **joi** type directly:\n\n```javascript\nconst schema = Joi.string().min(10);\n```\n\nIf the schema is a **joi** type, the `schema.validate(value, callback)` can be called directly on the type. When passing a non-type schema object,\nthe module converts it internally to an object() type equivalent to:\n\n```javascript\nconst schema = Joi.object().keys({\n    a: Joi.string()\n});\n```\n\nWhen validating a schema:\n\n* Values (or keys in case of objects) are optional by default.\n\n    ```javascript\n    Joi.validate(undefined, Joi.string()); // validates fine\n    ```\n\n    To disallow this behavior, you can either set the schema as `required()`, or set `presence` to `\"required\"` when passing `options`:\n\n    ```javascript\n    Joi.validate(undefined, Joi.string().required());\n    // or\n    Joi.validate(undefined, Joi.string(), /* options */ { presence: \"required\" });\n    ```\n\n* Strings are utf-8 encoded by default.\n* Rules are defined in an additive fashion and evaluated in order after whitelist and blacklist checks.\n\n# Browsers\n\nJoi doesn't directly support browsers, but you could use [joi-browser](https://github.com/jeffbski/joi-browser) for an ES5 build of Joi that works in browsers, or as a source of inspiration for your own builds.\n","readmeFilename":"README.md","repository":{"type":"git","url":"git://github.com/hapijs/joi.git"},"scripts":{"test":"lab -t 100 -a code -L","test-cov-html":"lab -r html -o coverage.html -a code","test-debug":"lab -a code","toc":"hapitoc","version":"npm run toc && git add API.md README.md"},"version":"10.6.0"}
+	module.exports = {"_from":"github:dwelle/joi","_id":"joi@10.6.0","_inBundle":false,"_location":"/joi","_phantomChildren":{},"_requested":{"type":"git","raw":"dwelle/joi","rawSpec":"dwelle/joi","saveSpec":"github:dwelle/joi","fetchSpec":null,"gitCommittish":null},"_requiredBy":["#DEV:/","#USER"],"_resolved":"github:dwelle/joi#8bfe7c2ad97b2d2da6ae774f05d4d9ddd89cab8f","_spec":"dwelle/joi","_where":"C:\\xampp\\htdocs\\repos\\forks\\joi-browser","bugs":{"url":"https://github.com/hapijs/joi/issues"},"bundleDependencies":false,"dependencies":{"hoek":"4.x.x","isemail":"3.x.x","items":"2.x.x","topo":"2.x.x"},"deprecated":false,"description":"Object schema validation","devDependencies":{"hapitoc":"1.x.x","lab":"14.x.x"},"engines":{"node":">=4.0.0"},"homepage":"https://github.com/hapijs/joi","keywords":["hapi","schema","validation"],"license":"BSD-3-Clause","main":"lib/index.js","name":"joi","repository":{"type":"git","url":"git://github.com/hapijs/joi.git"},"scripts":{"test":"lab -t 100 -a code -L","test-cov-html":"lab -r html -o coverage.html -a code","test-debug":"lab -a code","toc":"hapitoc","version":"npm run toc && git add API.md README.md"},"version":"10.6.0"}
 
 /***/ })
 /******/ ])
