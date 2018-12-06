@@ -5,7 +5,7 @@
   "main": "./dist/joi-browser.js",
   "scripts": {
     "prepublish": "npm run build-webpack",
-    "build-webpack": "webpack && uglifyjs dist/joi-browser.js -c warnings=false -m | ntee dist/joi-browser.min.js | ngzip > dist/joi-browser.min.js.gz",
+    "build-webpack": "webpack",
     "test": "karma start --single-run"
   },
   "author": "Jeff Barczewski",
@@ -15,18 +15,16 @@
   },
   "babel": {
     "plugins": [
-      "transform-es2015-modules-commonjs",
-      "transform-object-assign",
-      "transform-proto-to-assign",
-      [
-        "transform-es2015-classes",
-        {
-          "loose": true
-        }
-      ]
+      "transform-es2015-modules-commonjs"
     ],
     "presets": [
-      "es2015"
+      [
+        "env", {
+          "targets": {
+            "browsers": ["last 2 Chrome versions"]
+          }
+        }
+      ]
     ]
   },
   "repository": {
@@ -39,14 +37,11 @@
   "devDependencies": {
     "babel-core": "^6.2.1",
     "babel-loader": "^6.2.0",
-    "babel-plugin-transform-es2015-classes": "^6.14.0",
     "babel-plugin-transform-es2015-modules-commonjs": "^6.2.0",
-    "babel-plugin-transform-object-assign": "^6.8.0",
-    "babel-plugin-transform-proto-to-assign": "^6.9.0",
-    "babel-preset-es2015": "^6.1.18",
+    "babel-preset-env": "^1.7.0",
     "core-js": "^2.4.1",
     "expect": "^1.20.2",
-    "joi": "github:dwelle/joi",
+    "joi": "github:dwelle/joi#8276cc4",
     "json-loader": "^0.5.4",
     "karma": "^2.0.2",
     "karma-chrome-launcher": "^2.2.0",
